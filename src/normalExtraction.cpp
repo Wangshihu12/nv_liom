@@ -37,30 +37,34 @@ int uv2index(int u, int v)
 
 void OnInitialization()
 {
+    // 初始化存储从球面坐标到笛卡尔坐标变换矩阵的向量，每个像素点对应一个矩阵
     sp2cart_map = std::vector<Eigen::Matrix3f>(hor_pixel_num * ver_pixel_num, Eigen::Matrix3f::Zero(3, 3));
 
+    // 遍历所有像素点，计算每个像素点的球面到笛卡尔坐标变换矩阵
     for (int i = 0; i < hor_pixel_num * ver_pixel_num; ++i)
     {
         int u, v;
-        index2uv(i, u, v);
-        float psi = M_PI - float(u) * hor_resolution;
-        // float theta = (M_PI - (ver_fov * M_PI/180.0))/2.0 + float(v) * ver_resolution;
+        index2uv(i, u, v); // 将线性索引 i 转换为二维像素坐标 (u, v)
 
+        // 计算当前像素点的水平角 psi 和垂直角 theta
+        float psi = M_PI - float(u) * hor_resolution; // 水平角（方位角），取决于水平分辨率
         float theta = M_PI / 2.0 - (ver_max * M_PI / 180.0) + (float(v) * ver_resolution);
+        // 垂直角（极角），基于最大垂直视场角和垂直分辨率计算
 
-        Eigen::Matrix3f &mat = sp2cart_map[i];
+        Eigen::Matrix3f &mat = sp2cart_map[i]; // 获取当前像素点对应的变换矩阵
 
-        mat(0, 0) = -sin(psi);
-        mat(0, 1) = cos(psi) * cos(theta);
-        mat(0, 2) = cos(psi) * sin(theta);
+        // 填充矩阵的每一行，对应 x、y 和 z 的变换公式
+        mat(0, 0) = -sin(psi);             // x 的水平分量
+        mat(0, 1) = cos(psi) * cos(theta); // x 的垂直分量
+        mat(0, 2) = cos(psi) * sin(theta); // x 的深度分量
 
-        mat(1, 0) = cos(psi);
-        mat(1, 1) = sin(psi) * cos(theta);
-        mat(1, 2) = sin(psi) * sin(theta);
+        mat(1, 0) = cos(psi);              // y 的水平分量
+        mat(1, 1) = sin(psi) * cos(theta); // y 的垂直分量
+        mat(1, 2) = sin(psi) * sin(theta); // y 的深度分量
 
-        mat(2, 0) = 0.0;
-        mat(2, 1) = -sin(theta);
-        mat(2, 2) = cos(theta);
+        mat(2, 0) = 0.0;         // z 的水平分量
+        mat(2, 1) = -sin(theta); // z 的垂直分量
+        mat(2, 2) = cos(theta);  // z 的深度分量
     }
 }
 
