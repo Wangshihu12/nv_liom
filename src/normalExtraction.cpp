@@ -64,10 +64,15 @@ void OnInitialization()
     }
 }
 
+/**
+ * @brief 从投影点云中提取法线并生成法线点云
+ *
+ * @param projected_cloud 输入的投影点云
+ * @param normal_cloud 输出的带有法线的点云
+ */
 void NormalExtraction(const pcl::PointCloud<ProjectedPoint>::Ptr &projected_cloud,
                       pcl::PointCloud<PointsWithNormals>::Ptr &normal_cloud)
 {
-
     // 如果启用法线图像显示，初始化法线图像和法线分量图像
     if (show_img == 1)
     {
@@ -75,7 +80,7 @@ void NormalExtraction(const pcl::PointCloud<ProjectedPoint>::Ptr &projected_clou
         normal_img_sp = cv::Mat(ver_pixel_num, hor_pixel_num, CV_8UC3, cv::Scalar(0, 0, 0));
     }
 
-// 使用OpenMP进行并行计算，分配4个线程
+    // 使用OpenMP进行并行计算，分配4个线程
 #pragma omp parallel for num_threads(4)
     for (int i = 0; i < projected_cloud->size(); ++i)
     {
