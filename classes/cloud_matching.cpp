@@ -427,6 +427,16 @@ bool CloudMatching::MatchNormalCloudsNoDegeneracy(const KeyFrame &keyi, const Ke
     return true;
 }
 
+/**
+ * @brief 通过点云投影进行两帧点云的匹配
+ *
+ * @param keyi 第一帧关键帧的点云数据和位姿
+ * @param keyj 第二帧关键帧的点云数据和位姿
+ * @param rel_poseT 输出两帧之间的相对变换矩阵
+ * @param residual_sum 输出残差和
+ * @param projected_no 输出投影点的数量
+ * @return 是否匹配成功
+ */
 bool CloudMatching::MatchByProjection(const KeyFrame &keyi,
                                       const KeyFrame &keyj,
                                       Eigen::Matrix4d &rel_poseT,
