@@ -1,0 +1,15 @@
+{
+    "ros.distro": "noetic",
+    "files.associations": {
+        "core": "cpp",
+        "numericaldiff": "cpp"
+    },
+    "python.autoComplete.extraPaths": [
+        "/opt/ros/noetic/lib/python3/dist-packages",
+        "/path/to/SuperGluePretrainedNetwork"
+    ],
+    "python.analysis.extraPaths": [
+        "/opt/ros/noetic/lib/python3/dist-packages",
+        "/path/to/SuperGluePretrainedNetwork"
+    ]
+}
