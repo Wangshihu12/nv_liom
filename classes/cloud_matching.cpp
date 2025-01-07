@@ -10,6 +10,20 @@ CloudMatching::~CloudMatching()
 {
 }
 
+/**
+ * @brief 设置点云匹配的参数，包括分辨率、范围、滤波器等
+ *
+ * @param _nearest_point_range 最近点范围，用于过滤最近点
+ * @param _voxel_size 体素滤波的叶子大小
+ * @param hor_fov_ 激光雷达的水平视场角 (度)
+ * @param ver_max_ 激光雷达的最大垂直角 (度)
+ * @param ver_min_ 激光雷达的最小垂直角 (度)
+ * @param hor_pixel_num_ 水平方向的像素数
+ * @param ver_pixel_num_ 垂直方向的像素数
+ * @param lidar_to_imu_ 激光雷达到IMU的外参矩阵
+ * @param imu_to_lidar_ IMU到激光雷达的外参矩阵
+ * @param show_img_ 是否显示图像的标志，1表示显示，其他值表示不显示
+ */
 void CloudMatching::SetParams(float _nearest_point_range,
                               float _voxel_size,
                               float hor_fov_,
@@ -21,25 +35,29 @@ void CloudMatching::SetParams(float _nearest_point_range,
                               const Eigen::Matrix4d &imu_to_lidar_,
                               int show_img_)
 {
+    // 设置是否显示图像
+    show_img = show_img_ == 1;
 
-    show_img = show_img_ == 1 ? true : false;
-
+    // 设置最近点范围和体素滤波器叶子大小
     nearest_point_range = _nearest_point_range;
     voxel_size = _voxel_size;
 
+    // 设置激光雷达视场角和像素分辨率
     hor_fov = hor_fov_;
     ver_max = ver_max_;
     ver_min = ver_min_;
     hor_pixel_num = hor_pixel_num_;
     ver_pixel_num = ver_pixel_num_;
-    hor_resolution = (hor_fov * M_PI / 180.0f) / float(hor_pixel_num);
-    ver_resolution = ((ver_max - ver_min) * M_PI / 180.0f) / float(ver_pixel_num);
+    hor_resolution = (hor_fov * M_PI / 180.0f) / float(hor_pixel_num);             // 水平方向分辨率
+    ver_resolution = ((ver_max - ver_min) * M_PI / 180.0f) / float(ver_pixel_num); // 垂直方向分辨率
 
+    // 设置激光雷达到IMU和IMU到激光雷达的外参
     lidar_to_imu = lidar_to_imu_;
     imu_to_lidar = imu_to_lidar_;
 
-    voxelGridFilter.setLeafSize(voxel_size, voxel_size, voxel_size);
-    voxelGridFilterLoop.setLeafSize(0.2, 0.2, 0.2);
+    // 配置体素滤波器
+    voxelGridFilter.setLeafSize(voxel_size, voxel_size, voxel_size); // 普通体素滤波器
+    voxelGridFilterLoop.setLeafSize(0.2, 0.2, 0.2);                  // 用于闭环检测的滤波器
 }
 
 void CloudMatching::TransformPoints(const PointsWithNormals &po, PointsWithNormals &pm, const Eigen::Matrix4d T)
@@ -54,20 +72,31 @@ void CloudMatching::TransformPoints(const PointsWithNormals &po, PointsWithNorma
     return;
 }
 
+/**
+ * @brief 匹配两帧点云以估计它们的相对位姿，并计算残差和退化信息
+ *
+ * @param keyi 第一个关键帧的点云及相关信息
+ * @param keyj 第二个关键帧的点云及相关信息
+ * @param rel_poseT 输出的相对位姿（从`keyj`到`keyi`的变换矩阵）
+ * @param residual_sum 输出的残差和
+ * @param eigenvalues 输出的特征值，用于评估匹配的退化程度
+ * @param eigenvectors 输出的特征向量，用于评估匹配的退化方向
+ * @return 是否匹配成功，true表示成功，false表示失败
+ */
 bool CloudMatching::MatchNormalClouds(const KeyFrame &keyi, const KeyFrame &keyj,
                                       Eigen::Matrix4d &rel_poseT, double &residual_sum,
                                       Eigen::Vector3d &eigenvalues, Eigen::Matrix3d &eigenvectors)
 {
-
     std::vector<std::pair<int, int>> matches; // 用于存储点对匹配结果
-    // 计算两帧之间的初始相对位姿（以`keyj`的坐标系为参考）
+
+    // 初始化两帧之间的初始相对位姿，以`keyj`的坐标系为参考
     rel_poseT = (keyj.lidar_pose.inverse() * keyi.lidar_pose).matrix();
 
-    // 创建两个指向点云的指针，分别用于存储`keyi`和`keyj`的点云
+    // 准备点云
     pcl::PointCloud<PointsWithNormals>::Ptr cloud_i(new pcl::PointCloud<PointsWithNormals>());
     pcl::PointCloud<PointsWithNormals>::Ptr cloud_j(new pcl::PointCloud<PointsWithNormals>());
 
-    // 如果体素大小大于0.1，对两帧点云进行体素滤波以减少点数；否则直接复制点云
+    // 根据体素大小对点云进行体素滤波
     if (voxel_size > 0.1)
     {
         voxelGridFilter.setInputCloud(keyi.normalPoints);
@@ -82,7 +111,7 @@ bool CloudMatching::MatchNormalClouds(const KeyFrame &keyi, const KeyFrame &keyj
         cloud_j.reset(new pcl::PointCloud<PointsWithNormals>(*keyj.normalPoints));
     }
 
-    // 如果`cloud_j`为空，则匹配失败
+    // 如果目标点云为空，匹配失败
     if (cloud_j->empty())
     {
         return false;
@@ -92,95 +121,77 @@ bool CloudMatching::MatchNormalClouds(const KeyFrame &keyi, const KeyFrame &keyj
     kdtreeNormalPoint.reset(new pcl::KdTreeFLANN<PointsWithNormals>());
     kdtreeNormalPoint->setInputCloud(cloud_j);
 
-    // 使用高斯牛顿法进行优化，最多迭代30次
+    // 高斯牛顿法优化，最多迭代30次
     for (int opt_iter = 0; opt_iter < 30; ++opt_iter)
     {
+        std::vector<int> match_vec(cloud_i->size(), -1); // 存储匹配结果
+        residual_sum = 0.0;                              // 初始化残差
 
-        std::vector<int> match_vec(cloud_i->size(), -1); // 存储匹配结果的索引向量
-        residual_sum = 0.0;                              // 残差和初始化为0
-
-#pragma omp parallel for num_threads(4) // 使用OpenMP并行加速处理
+#pragma omp parallel for num_threads(4) // 使用OpenMP加速处理
         for (size_t point_id = 0; point_id < cloud_i->size(); ++point_id)
         {
-            PointsWithNormals point_i = cloud_i->points[point_id]; // 获取`cloud_i`中的点
+            PointsWithNormals point_i = cloud_i->points[point_id];
             PointsWithNormals point_ij;
-            TransformPoints(point_i, point_ij, rel_poseT); // 将点从`keyi`的坐标系转换到`keyj`的坐标系
+            TransformPoints(point_i, point_ij, rel_poseT);
 
             std::vector<int> knn_index;
             std::vector<float> knn_distance;
 
-            bool found_match = false;
-            int match_id = -1;
-
-            // 在`cloud_j`中找到与`point_ij`最近的3个邻居点
+            // 在目标点云中找到最近的3个点
             kdtreeNormalPoint->nearestKSearch(point_ij, 3, knn_index, knn_distance);
 
-            // 遍历3个最近邻点，寻找满足条件的匹配点
+            // 检查法向量和距离条件，确定匹配点
             for (int i = 0; i < 3; ++i)
             {
                 if (knn_distance[i] > nearest_point_range)
-                { // 距离超出范围
                     break;
-                }
 
-                // 检查法向量之间的夹角是否小于10度
                 PointsWithNormals &point_j = cloud_j->points[knn_index[i]];
                 float dot_product = point_ij.normal_x * point_j.normal_x +
                                     point_ij.normal_y * point_j.normal_y +
                                     point_ij.normal_z * point_j.normal_z;
 
-                if (dot_product < 0.9848)
-                { // 法向量夹角超过10度
+                if (dot_product < 0.9848) // 法向量夹角超过10度
                     continue;
-                }
 
-                found_match = true; // 找到匹配点
-                match_id = knn_index[i];
+                match_vec[point_id] = knn_index[i];
                 break;
             }
-
-            if (!found_match)
-            { // 如果没有找到匹配点，跳过当前点
-                continue;
-            }
-            match_vec[point_id] = match_id; // 记录匹配点的索引
         }
 
+        // 收集有效匹配对
         matches.clear();
         for (int i = 0; i < match_vec.size(); ++i)
         {
             if (match_vec[i] != -1)
-            { // 添加有效的匹配点对
-                std::pair<int, int> match_pair{i, match_vec[i]};
-                matches.push_back(match_pair);
-            }
+                matches.emplace_back(i, match_vec[i]);
         }
 
-        // 如果匹配点对的数量太少，则匹配失败
+        // 检查匹配对数量是否足够
         if (matches.size() < 15)
         {
             printf("Match Number: %d\n", int(matches.size()));
             return false;
         }
 
-        // 优化部分：高斯牛顿法
+        // 构造优化问题的雅可比矩阵和右侧向量
         Eigen::MatrixXd A(6, 6);
         Eigen::VectorXd b(6);
         A.setZero();
         b.setZero();
 
-        for (int match_id = 0; match_id < matches.size(); ++match_id)
+        for (const auto &match : matches)
         {
-            PointsWithNormals point_i = cloud_i->points[matches[match_id].first];
+            PointsWithNormals point_i = cloud_i->points[match.first];
             PointsWithNormals point_ij;
             TransformPoints(point_i, point_ij, rel_poseT);
-            PointsWithNormals &point_j = cloud_j->points[matches[match_id].second];
+            PointsWithNormals &point_j = cloud_j->points[match.second];
 
             Eigen::Vector3d X_ij(point_ij.x, point_ij.y, point_ij.z);
             Eigen::Vector3d X_j(point_j.x, point_j.y, point_j.z);
             Eigen::Vector3d N_j(point_j.normal_x, point_j.normal_y, point_j.normal_z);
 
-            double residual = N_j.dot(X_ij - X_j); // 计算残差
+            double residual = N_j.dot(X_ij - X_j);
             Eigen::Matrix<double, 1, 6> jacobian;
             jacobian << N_j[2] * X_ij[1] - N_j[1] * X_ij[2],
                 N_j[0] * X_ij[2] - N_j[2] * X_ij[0],
@@ -189,15 +200,16 @@ bool CloudMatching::MatchNormalClouds(const KeyFrame &keyi, const KeyFrame &keyj
                 N_j[1],
                 N_j[2];
 
-            A += jacobian.transpose() * jacobian; // 更新雅可比矩阵的二次型
-            b += jacobian.transpose() * residual; // 更新右侧向量
+            A += jacobian.transpose() * jacobian;
+            b += jacobian.transpose() * residual;
 
-            residual_sum += residual * residual; // 累加平方残差
+            residual_sum += residual * residual;
         }
 
-        residual_sum /= static_cast<float>(matches.size()); // 计算平均残差
+        residual_sum /= matches.size();
 
-        Eigen::VectorXd delta = A.ldlt().solve(-b); // 求解增量
+        Eigen::VectorXd delta = A.ldlt().solve(-b);
+
         Eigen::Matrix4d update = Eigen::Matrix4d::Identity();
         update(0, 3) = delta(3);
         update(1, 3) = delta(4);
@@ -207,36 +219,31 @@ bool CloudMatching::MatchNormalClouds(const KeyFrame &keyi, const KeyFrame &keyj
                                     Eigen::AngleAxisd(delta(0), Eigen::Vector3d::UnitX()))
                                        .matrix();
 
-        rel_poseT = update * rel_poseT; // 更新相对位姿
+        rel_poseT = update * rel_poseT;
 
-        // 如果旋转和位移的增量足够小，则停止迭代
         float deltaR = delta.segment<3>(0).norm() * 180.0 / M_PI;
         float deltaT = delta.segment<3>(3).norm();
 
         if (deltaR < 0.01 && deltaT < 0.01)
-        {
             break;
-        }
     }
 
-    // 检查匹配结果是否退化
-    Eigen::Matrix3d covMatrix;
-    covMatrix.setZero();
-
-    for (int i = 0; i < matches.size(); ++i)
+    // 检查匹配是否退化
+    Eigen::Matrix3d covMatrix = Eigen::Matrix3d::Zero();
+    for (const auto &match : matches)
     {
-        PointsWithNormals &pt = cloud_i->points[matches[i].first];
+        PointsWithNormals &pt = cloud_i->points[match.first];
         Eigen::Vector3d normal(pt.normal_x, pt.normal_y, pt.normal_z);
         covMatrix += normal * normal.transpose();
     }
-    covMatrix /= static_cast<float>(matches.size());
+    covMatrix /= matches.size();
     covMatrix = imu_to_lidar.block(0, 0, 3, 3) * covMatrix * lidar_to_imu.block(0, 0, 3, 3);
 
     Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigenSolver(covMatrix);
-    eigenvalues = eigenSolver.eigenvalues();   // 获取特征值
-    eigenvectors = eigenSolver.eigenvectors(); // 获取特征向量
+    eigenvalues = eigenSolver.eigenvalues();
+    eigenvectors = eigenSolver.eigenvectors();
 
-    return true; // 匹配成功
+    return true;
 }
 
 bool CloudMatching::MatchNormalCloudsNoDegeneracy(const KeyFrame &keyi, const KeyFrame &keyj,
