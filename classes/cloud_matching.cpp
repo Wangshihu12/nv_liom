@@ -798,92 +798,101 @@ bool CloudMatching::MatchByProjection(const KeyFrame &keyi,
     return true;
 }
 
+/**
+ * @brief 将点云投影到二维像素平面并对每个像素选择最近的点，同时移除错误或冗余点
+ *
+ * @param cloud_in 输入的三维点云数据
+ * @param cloud_out 输出的二维投影点云数据
+ */
 void CloudMatching::ProjectCloud(const pcl::PointCloud<PointsWithNormals>::Ptr &cloud_in,
                                  pcl::PointCloud<PointsWithNormals>::Ptr &cloud_out)
 {
+    // 初始化输出点云，每个像素点对应一个容器
     cloud_out.reset(new pcl::PointCloud<PointsWithNormals>(ver_pixel_num, hor_pixel_num));
 
-#pragma opm parallel for num_threads(4)
+    // 遍历输入点云中的每个点，进行投影
+#pragma omp parallel for num_threads(4) // 使用OpenMP进行多线程并行加速
     for (size_t i = 0; i < cloud_in->size(); ++i)
     {
         PointsWithNormals &pt = cloud_in->points[i];
-        int u, v;
-        get_uv(pt, u, v);
-        if (u == -1 || v == -1)
+        int u, v;               // u: 水平像素索引，v: 垂直像素索引
+        get_uv(pt, u, v);       // 根据点的坐标计算其在二维投影平面的像素坐标
+        if (u == -1 || v == -1) // 如果像素坐标无效，跳过
         {
             continue;
         }
 
-        int index = v * hor_pixel_num + u;
-        if (cloud_out->points[index].valid == 1)
+        int index = v * hor_pixel_num + u;       // 计算点在二维数组中的索引
+        if (cloud_out->points[index].valid == 1) // 如果该像素已有点
         {
-            // Check range: Closest first
+            // 检查当前点与已有点的距离，保留距离更近的点
             if (get_range(pt) >= get_range(cloud_out->points[index]))
             {
                 continue;
             }
         }
-        else
-        {
-            cloud_out->points[index] = pt;
-            cloud_out->points[index].valid = 1;
-        }
+        // 如果该像素尚未被占用或当前点更近，则更新该像素的点信息
+        cloud_out->points[index] = pt;
+        cloud_out->points[index].valid = 1;
     }
 
-    for (int u = 0; u < hor_pixel_num; ++u)
+    // 对点云进行进一步清理，移除可能的错误点或冗余点
+    for (int u = 0; u < hor_pixel_num; ++u) // 遍历水平像素
     {
-        for (int v = 0; v < ver_pixel_num; ++v)
+        for (int v = 0; v < ver_pixel_num; ++v) // 遍历垂直像素
         {
             int index = v * hor_pixel_num + u;
-            if (cloud_out->points[index].valid == 0)
+            if (cloud_out->points[index].valid == 0) // 如果该像素无效，跳过
             {
                 continue;
             }
 
-            PointsWithNormals &query_pt = cloud_out->points[index];
-            Eigen::Vector3d ray_dir = Eigen::Vector3d(query_pt.x, query_pt.y, query_pt.z);
-            ray_dir.normalize();
+            PointsWithNormals &query_pt = cloud_out->points[index];                                     // 获取当前像素点信息
+            Eigen::Vector3d ray_dir = Eigen::Vector3d(query_pt.x, query_pt.y, query_pt.z).normalized(); // 当前点的方向向量
 
+            // 如果当前点的方向向量与法向量夹角过大，则跳过
             if (ray_dir.dot(Eigen::Vector3d(query_pt.normal_x, query_pt.normal_y, query_pt.normal_z)) < 0)
             {
                 continue;
             }
 
+            // 检查当前点的邻域像素，移除可能的冗余点
             for (int j = -2; j <= 2; ++j)
             {
-                if (u + j < 0 || u + j >= hor_pixel_num)
+                if (u + j < 0 || u + j >= hor_pixel_num) // 检查水平像素是否越界
                 {
                     continue;
                 }
                 for (int k = -2; k <= 2; ++k)
                 {
-                    if (v + k < 0 || v + k >= ver_pixel_num)
+                    if (v + k < 0 || v + k >= ver_pixel_num) // 检查垂直像素是否越界
                     {
                         continue;
                     }
-                    if (j == 0 && k == 0)
+                    if (j == 0 && k == 0) // 跳过当前点本身
                     {
                         continue;
                     }
                     int target_index = hor_pixel_num * (v + k) + (u + j);
 
-                    PointsWithNormals &target_pt = cloud_out->points[target_index];
-                    if (target_pt.valid == 0)
+                    PointsWithNormals &target_pt = cloud_out->points[target_index]; // 获取邻域像素点信息
+                    if (target_pt.valid == 0)                                       // 如果邻域像素无效，跳过
                     {
                         continue;
                     }
-                    if (target_pt.range > query_pt.range)
+                    if (target_pt.range > query_pt.range) // 如果邻域点距离大于当前点，跳过
                     {
                         continue;
                     }
 
-                    Eigen::Vector3d target_ray_dir = Eigen::Vector3d(target_pt.x, target_pt.y, target_pt.z);
-                    target_ray_dir.normalize();
+                    Eigen::Vector3d target_ray_dir = Eigen::Vector3d(target_pt.x, target_pt.y, target_pt.z).normalized(); // 邻域点的方向向量
 
+                    // 如果邻域点的方向向量与其法向量夹角过大，跳过
                     if (target_ray_dir.dot(Eigen::Vector3d(target_pt.normal_x, target_pt.normal_y, target_pt.normal_z)) > 0)
                     {
                         continue;
                     }
+                    // 标记当前点为无效点
                     query_pt.valid = 0;
                 }
             }
