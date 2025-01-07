@@ -21,23 +21,23 @@ double ang_bias_y;
 double ang_bias_z;
 
 bool do_deskew;
-FILE * time_file;
+FILE *time_file;
 
 std::string map_save_dir;
 
 Eigen::Matrix3d lidar_to_imu_R;
 Eigen::Vector3d lidar_to_imu_t;
 
-
-void OnSubscribeIMU(const sensor_msgs::ImuConstPtr & msg);
-void OnSubscribeLiDARPointCloud_Hesai(const sensor_msgs::PointCloud2ConstPtr & msg);
-void OnSubscribeVelodynePointCloud(const sensor_msgs::PointCloud2ConstPtr & msg);
-void OnSubscribeLiDARPointCloud(const sensor_msgs::PointCloud2ConstPtr & msg);
+void OnSubscribeIMU(const sensor_msgs::ImuConstPtr &msg);
+void OnSubscribeLiDARPointCloud_Hesai(const sensor_msgs::PointCloud2ConstPtr &msg);
+void OnSubscribeVelodynePointCloud(const sensor_msgs::PointCloud2ConstPtr &msg);
+void OnSubscribeLiDARPointCloud(const sensor_msgs::PointCloud2ConstPtr &msg);
 bool EstimateRotation();
-sensor_msgs::Imu imuTransformation(const sensor_msgs::Imu & imu);
+sensor_msgs::Imu imuTransformation(const sensor_msgs::Imu &imu);
 Eigen::Matrix3d rotInterpolation(const Eigen::Matrix3d mat1, const Eigen::Matrix3d mat2, double ratio);
 
-Eigen::Matrix3d rotInterpolation(const Eigen::Matrix3d mat1, const Eigen::Matrix3d mat2, double ratio) {
+Eigen::Matrix3d rotInterpolation(const Eigen::Matrix3d mat1, const Eigen::Matrix3d mat2, double ratio)
+{
     Eigen::Matrix3d rel_rot = mat1.transpose() * mat2;
     Eigen::AngleAxisd angAxis(rel_rot);
     Eigen::Vector3d axis = angAxis.axis();
@@ -46,11 +46,11 @@ Eigen::Matrix3d rotInterpolation(const Eigen::Matrix3d mat1, const Eigen::Matrix
     angle *= ratio;
     rel_rot = Eigen::AngleAxisd(angle, axis).toRotationMatrix();
 
-    return mat1*rel_rot;
+    return mat1 * rel_rot;
 }
 
-
-sensor_msgs::Imu imuTransformation(const sensor_msgs::Imu & imu) {
+sensor_msgs::Imu imuTransformation(const sensor_msgs::Imu &imu)
+{
     sensor_msgs::Imu imu_out = imu;
     Eigen::Vector3d acc_lidar = lidar_to_imu_R * Eigen::Vector3d(imu.linear_acceleration.x, imu.linear_acceleration.y, imu.linear_acceleration.z);
     Eigen::Vector3d angular_vel = lidar_to_imu_R * Eigen::Vector3d(imu.angular_velocity.x, imu.angular_velocity.y, imu.angular_velocity.z);
@@ -63,24 +63,26 @@ sensor_msgs::Imu imuTransformation(const sensor_msgs::Imu & imu) {
     return imu_out;
 }
 
-
-bool EstimateRotation() {
+bool EstimateRotation()
+{
     mtx.lock();
 
     imuTime = std::vector<double>(imuQueue.size(), 0.0);
     imuRotMat = std::vector<Eigen::Matrix3d>(imuQueue.size(), Eigen::Matrix3d::Identity());
     poseSize = 0;
-    for(size_t i = 0; i < imuQueue.size(); ++i) {
+    for (size_t i = 0; i < imuQueue.size(); ++i)
+    {
 
         sensor_msgs::Imu imu_t = imuTransformation(imuQueue[i]);
-        if(i == 0) {
+        if (i == 0)
+        {
             imuTime[i] = imu_t.header.stamp.toSec();
             imuRotMat[i] = Eigen::Matrix3d::Identity(3, 3);
             ++poseSize;
             continue;
         }
         imuTime[i] = imu_t.header.stamp.toSec();
-        double dt = imuTime[i] - imuTime[i-1];
+        double dt = imuTime[i] - imuTime[i - 1];
 
         double angular_vel_x = imu_t.angular_velocity.x - ang_bias_x;
         double angular_vel_y = imu_t.angular_velocity.y - ang_bias_y;
@@ -94,36 +96,41 @@ bool EstimateRotation() {
         skew_R(2, 0) = -angular_vel_y;
         skew_R(2, 1) = angular_vel_x;
 
-        imuRotMat[i] = imuRotMat[i-1] * (Eigen::Matrix3d::Identity(3, 3) + skew_R * dt);
-        //normalize
+        imuRotMat[i] = imuRotMat[i - 1] * (Eigen::Matrix3d::Identity(3, 3) + skew_R * dt);
+        // normalize
         imuRotMat[i] = Eigen::AngleAxisd(imuRotMat[i]).toRotationMatrix();
         ++poseSize;
     }
     mtx.unlock();
 
-    if(poseSize == 0) {
+    if (poseSize == 0)
+    {
         return false;
     }
 
     return true;
 }
 
-void OnSubscribeIMU(const sensor_msgs::ImuConstPtr & msg) {
+void OnSubscribeIMU(const sensor_msgs::ImuConstPtr &msg)
+{
     mtx.lock();
     imuQueue.push_back(*msg);
 
     mtx.unlock();
 }
 
-void OnSubscribeAngBias(const std_msgs::Float64MultiArrayConstPtr & msg) {
+void OnSubscribeAngBias(const std_msgs::Float64MultiArrayConstPtr &msg)
+{
     ang_bias_x = msg->data[0];
     ang_bias_y = msg->data[1];
     ang_bias_z = msg->data[2];
 }
 
-void OnSubscribeLiDARPointCloud_Hesai(const sensor_msgs::PointCloud2ConstPtr & msg) {
+void OnSubscribeLiDARPointCloud_Hesai(const sensor_msgs::PointCloud2ConstPtr &msg)
+{
     pcl::fromROSMsg(*msg, *hesai_cloud_now);
-    if(hesai_cloud_now->empty()) {
+    if (hesai_cloud_now->empty())
+    {
         return;
     }
 
@@ -133,20 +140,23 @@ void OnSubscribeLiDARPointCloud_Hesai(const sensor_msgs::PointCloud2ConstPtr & m
     transformed_msg.header.frame_id = "lidar";
 
     std::vector<double> point_times;
-    for(size_t i = 0; i < hesai_cloud_now->size(); ++i) {
+    for (size_t i = 0; i < hesai_cloud_now->size(); ++i)
+    {
         point_times.push_back(hesai_cloud_now->points[i].timestamp);
     }
     std::sort(point_times.begin(), point_times.end());
     double min_time = point_times.front();
     double max_time = point_times.back();
 
-    if(max_time - min_time > 0.15) {
+    if (max_time - min_time > 0.15)
+    {
 
         printf("wrong points\n");
         return;
     }
 
-    if(!do_deskew) {
+    if (!do_deskew)
+    {
         pubLiDARDeskew.publish(transformed_msg);
         pubLiDAR.publish(transformed_msg);
         return;
@@ -156,23 +166,27 @@ void OnSubscribeLiDARPointCloud_Hesai(const sensor_msgs::PointCloud2ConstPtr & m
     double imu_back_time = 0.0;
 
     mtx.lock();
-    if(imuQueue.empty()) {
+    if (imuQueue.empty())
+    {
         mtx.unlock();
         return;
     }
 
     imu_front_time = imuQueue.front().header.stamp.toSec();
     imu_back_time = imuQueue.back().header.stamp.toSec();
-    if(imu_front_time > min_time) {
+    if (imu_front_time > min_time)
+    {
         // IMU minimum time is larger than the point time: invalid point cloud
         mtx.unlock();
         return;
     }
     sensor_msgs::Imu imu_front;
-    while(imuQueue.front().header.stamp.toSec() < min_time) {
+    while (imuQueue.front().header.stamp.toSec() < min_time)
+    {
         imu_front = imuQueue.front();
         imuQueue.pop_front();
-        if(imuQueue.empty()) {
+        if (imuQueue.empty())
+        {
             mtx.unlock();
             return;
         }
@@ -181,7 +195,8 @@ void OnSubscribeLiDARPointCloud_Hesai(const sensor_msgs::PointCloud2ConstPtr & m
 
     mtx.unlock();
 
-    while(imu_back_time < max_time) {
+    while (imu_back_time < max_time)
+    {
         // Wait untill imuQueue fills up to cover all point times
         usleep(1000);
         mtx.lock();
@@ -189,18 +204,20 @@ void OnSubscribeLiDARPointCloud_Hesai(const sensor_msgs::PointCloud2ConstPtr & m
         mtx.unlock();
     }
 
-
-    if(!EstimateRotation()) {
+    if (!EstimateRotation())
+    {
         pubLiDARDeskew.publish(transformed_msg);
         pubLiDAR.publish(transformed_msg);
         return;
     }
 
-    //Estimate the first rotation
+    // Estimate the first rotation
     int first_imu_index = 0;
-    while(imuTime[first_imu_index] < min_time) {
+    while (imuTime[first_imu_index] < min_time)
+    {
         ++first_imu_index;
-        if(first_imu_index >= poseSize) {
+        if (first_imu_index >= poseSize)
+        {
             break;
         }
     }
@@ -210,17 +227,20 @@ void OnSubscribeLiDARPointCloud_Hesai(const sensor_msgs::PointCloud2ConstPtr & m
     double first_rotZ = 0.0;
     Eigen::Matrix3d first_rotMat = Eigen::Matrix3d::Identity();
 
-    if(first_imu_index == 0 || imuTime[first_imu_index] < min_time) {
+    if (first_imu_index == 0 || imuTime[first_imu_index] < min_time)
+    {
         first_rotMat = imuRotMat[first_imu_index];
-    } else {
-        double ratio = (min_time - imuTime[first_imu_index -1])/(imuTime[first_imu_index] - imuTime[first_imu_index - 1]);
-        first_rotMat = rotInterpolation(imuRotMat[first_imu_index-1], imuRotMat[first_imu_index], ratio);
+    }
+    else
+    {
+        double ratio = (min_time - imuTime[first_imu_index - 1]) / (imuTime[first_imu_index] - imuTime[first_imu_index - 1]);
+        first_rotMat = rotInterpolation(imuRotMat[first_imu_index - 1], imuRotMat[first_imu_index], ratio);
     }
 
-
-    #pragma omp parallel for num_threads(4)
-    for(size_t i = 0; i < hesai_cloud_now->size(); ++i) {
-        HesaiPoint & pt = hesai_cloud_now->points[i];
+#pragma omp parallel for num_threads(4)
+    for (size_t i = 0; i < hesai_cloud_now->size(); ++i)
+    {
+        HesaiPoint &pt = hesai_cloud_now->points[i];
         int imu_index = 0;
 
         double point_time = pt.timestamp;
@@ -231,31 +251,33 @@ void OnSubscribeLiDARPointCloud_Hesai(const sensor_msgs::PointCloud2ConstPtr & m
 
         Eigen::Matrix3d rotMat;
 
-        while(imuTime[imu_index] < point_time) {
+        while (imuTime[imu_index] < point_time)
+        {
             ++imu_index;
-            if(imu_index >= poseSize) {
+            if (imu_index >= poseSize)
+            {
                 printf("imu index exceeds est_pose count: %d, %d\n", imu_index, poseSize);
                 printf("imu time: %f[s], point time: %f[s]\n", imuTime[imu_index], point_time);
                 break;
             }
         }
 
-        if(imu_index == 0 || imuTime[imu_index] < point_time) {
+        if (imu_index == 0 || imuTime[imu_index] < point_time)
+        {
             rotMat = first_rotMat.transpose() * imuRotMat[imu_index];
-        }  else {
-
-            double ratio = (point_time - imuTime[imu_index -1])/(imuTime[imu_index] - imuTime[imu_index - 1]);
-            rotMat = first_rotMat.transpose() * (rotInterpolation(imuRotMat[imu_index-1], imuRotMat[imu_index], ratio));
         }
+        else
+        {
 
+            double ratio = (point_time - imuTime[imu_index - 1]) / (imuTime[imu_index] - imuTime[imu_index - 1]);
+            rotMat = first_rotMat.transpose() * (rotInterpolation(imuRotMat[imu_index - 1], imuRotMat[imu_index], ratio));
+        }
 
         Eigen::Vector3d pt_vec = rotMat * Eigen::Vector3d(pt.x, pt.y, pt.z);
         pt.x = pt_vec.x();
         pt.y = pt_vec.y();
         pt.z = pt_vec.z();
-
     }
-
 
     sensor_msgs::PointCloud2 deskew_msg;
     pcl::toROSMsg(*hesai_cloud_now, deskew_msg);
@@ -263,15 +285,15 @@ void OnSubscribeLiDARPointCloud_Hesai(const sensor_msgs::PointCloud2ConstPtr & m
     deskew_msg.header.frame_id = "lidar";
     pubLiDARDeskew.publish(deskew_msg);
     pubLiDAR.publish(transformed_msg);
-
 }
 
-void OnSubscribeLiDARPointCloud(const sensor_msgs::PointCloud2ConstPtr & msg) {
+void OnSubscribeLiDARPointCloud(const sensor_msgs::PointCloud2ConstPtr &msg)
+{
     pcl::fromROSMsg(*msg, *cloud_now);
-    if(cloud_now->empty()) {
+    if (cloud_now->empty())
+    {
         return;
     }
-
 
     sensor_msgs::PointCloud2 transformed_msg;
     pcl::toROSMsg(*cloud_now, transformed_msg);
@@ -280,19 +302,22 @@ void OnSubscribeLiDARPointCloud(const sensor_msgs::PointCloud2ConstPtr & msg) {
     double cloud_time = msg->header.stamp.toSec();
 
     std::vector<double> point_times;
-    for(size_t i = 0; i < cloud_now->size(); ++i) {
-        point_times.push_back(static_cast<double>(cloud_now->points[i].t)*1e-9 + cloud_time);
+    for (size_t i = 0; i < cloud_now->size(); ++i)
+    {
+        point_times.push_back(static_cast<double>(cloud_now->points[i].t) * 1e-9 + cloud_time);
     }
     std::sort(point_times.begin(), point_times.end());
     double min_time = point_times.front();
     double max_time = point_times.back();
 
-    if(max_time - min_time > 0.15) {
+    if (max_time - min_time > 0.15)
+    {
         printf("wrong points\n");
         return;
     }
 
-    if(!do_deskew) {
+    if (!do_deskew)
+    {
         pubLiDARDeskew.publish(transformed_msg);
         pubLiDAR.publish(transformed_msg);
         return;
@@ -302,24 +327,27 @@ void OnSubscribeLiDARPointCloud(const sensor_msgs::PointCloud2ConstPtr & msg) {
     double imu_back_time = 0.0;
     mtx.lock();
 
-    if(imuQueue.empty()) {
+    if (imuQueue.empty())
+    {
         mtx.unlock();
         return;
     }
 
-
     imu_front_time = imuQueue.front().header.stamp.toSec();
     imu_back_time = imuQueue.back().header.stamp.toSec();
-    if(imu_front_time > min_time) {
+    if (imu_front_time > min_time)
+    {
         // IMU minimum time is larger than the point time: invalid point cloud
         mtx.unlock();
         return;
     }
     sensor_msgs::Imu imu_front;
-    while(imuQueue.front().header.stamp.toSec() < min_time) {
+    while (imuQueue.front().header.stamp.toSec() < min_time)
+    {
         imu_front = imuQueue.front();
         imuQueue.pop_front();
-        if(imuQueue.empty()) {
+        if (imuQueue.empty())
+        {
             mtx.unlock();
             return;
         }
@@ -328,26 +356,28 @@ void OnSubscribeLiDARPointCloud(const sensor_msgs::PointCloud2ConstPtr & msg) {
 
     mtx.unlock();
 
-    while(imu_back_time < max_time) {
+    while (imu_back_time < max_time)
+    {
         // Wait untill imuQueue fills up to cover all point times
         mtx.lock();
         imu_back_time = imuQueue.back().header.stamp.toSec();
         mtx.unlock();
     }
 
-
-    if(!EstimateRotation()) {
+    if (!EstimateRotation())
+    {
         pubLiDARDeskew.publish(transformed_msg);
         pubLiDAR.publish(transformed_msg);
         return;
     }
 
-
-    //Estimate the first rotation
+    // Estimate the first rotation
     int first_imu_index = 0;
-    while(imuTime[first_imu_index] < min_time) {
+    while (imuTime[first_imu_index] < min_time)
+    {
         ++first_imu_index;
-        if(first_imu_index >= poseSize) {
+        if (first_imu_index >= poseSize)
+        {
             break;
         }
     }
@@ -357,20 +387,23 @@ void OnSubscribeLiDARPointCloud(const sensor_msgs::PointCloud2ConstPtr & msg) {
     double first_rotZ = 0.0;
     Eigen::Matrix3d first_rotMat = Eigen::Matrix3d::Identity();
 
-    if(first_imu_index == 0 || imuTime[first_imu_index] < min_time) {
+    if (first_imu_index == 0 || imuTime[first_imu_index] < min_time)
+    {
         first_rotMat = imuRotMat[first_imu_index];
-    } else {
-        double ratio = (min_time - imuTime[first_imu_index -1])/(imuTime[first_imu_index] - imuTime[first_imu_index - 1]);
-        first_rotMat = rotInterpolation(imuRotMat[first_imu_index-1], imuRotMat[first_imu_index], ratio);
+    }
+    else
+    {
+        double ratio = (min_time - imuTime[first_imu_index - 1]) / (imuTime[first_imu_index] - imuTime[first_imu_index - 1]);
+        first_rotMat = rotInterpolation(imuRotMat[first_imu_index - 1], imuRotMat[first_imu_index], ratio);
     }
 
-
-    #pragma omp parallel for num_threads(4)
-    for(size_t i = 0; i < cloud_now->size(); ++i) {
-        OusterPoint & pt = cloud_now->points[i];
+#pragma omp parallel for num_threads(4)
+    for (size_t i = 0; i < cloud_now->size(); ++i)
+    {
+        OusterPoint &pt = cloud_now->points[i];
         int imu_index = 0;
 
-        double point_time = static_cast<double>(pt.t)*1e-9 + cloud_time;
+        double point_time = static_cast<double>(pt.t) * 1e-9 + cloud_time;
 
         double rotX;
         double rotY;
@@ -378,31 +411,33 @@ void OnSubscribeLiDARPointCloud(const sensor_msgs::PointCloud2ConstPtr & msg) {
 
         Eigen::Matrix3d rotMat;
 
-        while(imuTime[imu_index] < point_time) {
+        while (imuTime[imu_index] < point_time)
+        {
             ++imu_index;
-            if(imu_index >= poseSize) {
+            if (imu_index >= poseSize)
+            {
                 printf("imu index exceeds est_pose count: %d, %d\n", imu_index, poseSize);
                 printf("imu time: %f[s], point time: %f[s]\n", imuTime[imu_index], point_time);
                 break;
             }
         }
 
-        if(imu_index == 0 || imuTime[imu_index] < point_time) {
+        if (imu_index == 0 || imuTime[imu_index] < point_time)
+        {
             rotMat = first_rotMat.transpose() * imuRotMat[imu_index];
-        }  else {
-
-            double ratio = (point_time - imuTime[imu_index -1])/(imuTime[imu_index] - imuTime[imu_index - 1]);
-            rotMat = first_rotMat.transpose() * (rotInterpolation(imuRotMat[imu_index-1], imuRotMat[imu_index], ratio));
         }
+        else
+        {
 
+            double ratio = (point_time - imuTime[imu_index - 1]) / (imuTime[imu_index] - imuTime[imu_index - 1]);
+            rotMat = first_rotMat.transpose() * (rotInterpolation(imuRotMat[imu_index - 1], imuRotMat[imu_index], ratio));
+        }
 
         Eigen::Vector3d pt_vec = rotMat * Eigen::Vector3d(pt.x, pt.y, pt.z);
         pt.x = pt_vec.x();
         pt.y = pt_vec.y();
         pt.z = pt_vec.z();
-
     }
-
 
     sensor_msgs::PointCloud2 deskew_msg;
     pcl::toROSMsg(*cloud_now, deskew_msg);
@@ -410,13 +445,13 @@ void OnSubscribeLiDARPointCloud(const sensor_msgs::PointCloud2ConstPtr & msg) {
     deskew_msg.header.frame_id = "lidar";
     pubLiDARDeskew.publish(deskew_msg);
     pubLiDAR.publish(transformed_msg);
-
 }
 
-
-void OnSubscribeVelodynePointCloud(const sensor_msgs::PointCloud2ConstPtr & msg) {
+void OnSubscribeVelodynePointCloud(const sensor_msgs::PointCloud2ConstPtr &msg)
+{
     pcl::fromROSMsg(*msg, *velodyne_cloud_now);
-    if(velodyne_cloud_now->empty()) {
+    if (velodyne_cloud_now->empty())
+    {
         return;
     }
 
@@ -427,19 +462,22 @@ void OnSubscribeVelodynePointCloud(const sensor_msgs::PointCloud2ConstPtr & msg)
     double cloud_time = msg->header.stamp.toSec();
 
     std::vector<double> point_times;
-    for(size_t i = 0; i < velodyne_cloud_now->size(); ++i) {
+    for (size_t i = 0; i < velodyne_cloud_now->size(); ++i)
+    {
         point_times.push_back(static_cast<double>(velodyne_cloud_now->points[i].time) + cloud_time);
     }
     std::sort(point_times.begin(), point_times.end());
     double min_time = point_times.front();
     double max_time = point_times.back();
 
-    if(max_time - min_time > 0.15) {
+    if (max_time - min_time > 0.15)
+    {
         printf("wrong points\n");
         return;
     }
 
-    if(!do_deskew) {
+    if (!do_deskew)
+    {
         pubLiDARDeskew.publish(transformed_msg);
         pubLiDAR.publish(transformed_msg);
         return;
@@ -449,24 +487,27 @@ void OnSubscribeVelodynePointCloud(const sensor_msgs::PointCloud2ConstPtr & msg)
     double imu_back_time = 0.0;
     mtx.lock();
 
-    if(imuQueue.empty()) {
+    if (imuQueue.empty())
+    {
         mtx.unlock();
         return;
     }
 
-
     imu_front_time = imuQueue.front().header.stamp.toSec();
     imu_back_time = imuQueue.back().header.stamp.toSec();
-    if(imu_front_time > min_time) {
+    if (imu_front_time > min_time)
+    {
         // IMU minimum time is larger than the point time: invalid point cloud
         mtx.unlock();
         return;
     }
     sensor_msgs::Imu imu_front;
-    while(imuQueue.front().header.stamp.toSec() < min_time) {
+    while (imuQueue.front().header.stamp.toSec() < min_time)
+    {
         imu_front = imuQueue.front();
         imuQueue.pop_front();
-        if(imuQueue.empty()) {
+        if (imuQueue.empty())
+        {
             mtx.unlock();
             return;
         }
@@ -475,26 +516,28 @@ void OnSubscribeVelodynePointCloud(const sensor_msgs::PointCloud2ConstPtr & msg)
 
     mtx.unlock();
 
-    while(imu_back_time < max_time) {
+    while (imu_back_time < max_time)
+    {
         // Wait untill imuQueue fills up to cover all point times
         mtx.lock();
         imu_back_time = imuQueue.back().header.stamp.toSec();
         mtx.unlock();
     }
 
-
-    if(!EstimateRotation()) {
+    if (!EstimateRotation())
+    {
         pubLiDARDeskew.publish(transformed_msg);
         pubLiDAR.publish(transformed_msg);
         return;
     }
 
-
-    //Estimate the first rotation
+    // Estimate the first rotation
     int first_imu_index = 0;
-    while(imuTime[first_imu_index] < min_time) {
+    while (imuTime[first_imu_index] < min_time)
+    {
         ++first_imu_index;
-        if(first_imu_index >= poseSize) {
+        if (first_imu_index >= poseSize)
+        {
             break;
         }
     }
@@ -504,17 +547,20 @@ void OnSubscribeVelodynePointCloud(const sensor_msgs::PointCloud2ConstPtr & msg)
     double first_rotZ = 0.0;
     Eigen::Matrix3d first_rotMat = Eigen::Matrix3d::Identity();
 
-    if(first_imu_index == 0 || imuTime[first_imu_index] < min_time) {
+    if (first_imu_index == 0 || imuTime[first_imu_index] < min_time)
+    {
         first_rotMat = imuRotMat[first_imu_index];
-    } else {
-        double ratio = (min_time - imuTime[first_imu_index -1])/(imuTime[first_imu_index] - imuTime[first_imu_index - 1]);
-        first_rotMat = rotInterpolation(imuRotMat[first_imu_index-1], imuRotMat[first_imu_index], ratio);
+    }
+    else
+    {
+        double ratio = (min_time - imuTime[first_imu_index - 1]) / (imuTime[first_imu_index] - imuTime[first_imu_index - 1]);
+        first_rotMat = rotInterpolation(imuRotMat[first_imu_index - 1], imuRotMat[first_imu_index], ratio);
     }
 
-
-    #pragma omp parallel for num_threads(4)
-    for(size_t i = 0; i < velodyne_cloud_now->size(); ++i) {
-        VelodynePointXYZIRT & pt = velodyne_cloud_now->points[i];
+#pragma omp parallel for num_threads(4)
+    for (size_t i = 0; i < velodyne_cloud_now->size(); ++i)
+    {
+        VelodynePointXYZIRT &pt = velodyne_cloud_now->points[i];
         int imu_index = 0;
 
         double point_time = static_cast<double>(pt.time) + cloud_time;
@@ -525,31 +571,33 @@ void OnSubscribeVelodynePointCloud(const sensor_msgs::PointCloud2ConstPtr & msg)
 
         Eigen::Matrix3d rotMat;
 
-        while(imuTime[imu_index] < point_time) {
+        while (imuTime[imu_index] < point_time)
+        {
             ++imu_index;
-            if(imu_index >= poseSize) {
+            if (imu_index >= poseSize)
+            {
                 printf("imu index exceeds est_pose count: %d, %d\n", imu_index, poseSize);
                 printf("imu time: %f[s], point time: %f[s]\n", imuTime[imu_index], point_time);
                 break;
             }
         }
 
-        if(imu_index == 0 || imuTime[imu_index] < point_time) {
+        if (imu_index == 0 || imuTime[imu_index] < point_time)
+        {
             rotMat = first_rotMat.transpose() * imuRotMat[imu_index];
-        }  else {
-
-            double ratio = (point_time - imuTime[imu_index -1])/(imuTime[imu_index] - imuTime[imu_index - 1]);
-            rotMat = first_rotMat.transpose() * (rotInterpolation(imuRotMat[imu_index-1], imuRotMat[imu_index], ratio));
         }
+        else
+        {
 
+            double ratio = (point_time - imuTime[imu_index - 1]) / (imuTime[imu_index] - imuTime[imu_index - 1]);
+            rotMat = first_rotMat.transpose() * (rotInterpolation(imuRotMat[imu_index - 1], imuRotMat[imu_index], ratio));
+        }
 
         Eigen::Vector3d pt_vec = rotMat * Eigen::Vector3d(pt.x, pt.y, pt.z);
         pt.x = pt_vec.x();
         pt.y = pt_vec.y();
         pt.z = pt_vec.z();
-
     }
-
 
     sensor_msgs::PointCloud2 deskew_msg;
     pcl::toROSMsg(*velodyne_cloud_now, deskew_msg);
@@ -557,13 +605,13 @@ void OnSubscribeVelodynePointCloud(const sensor_msgs::PointCloud2ConstPtr & msg)
     deskew_msg.header.frame_id = "lidar";
     pubLiDARDeskew.publish(deskew_msg);
     pubLiDAR.publish(transformed_msg);
-
-
 }
 
-void OnSubscribeLiDARPointCloud_Livox(const sensor_msgs::PointCloud2ConstPtr & msg) {
+void OnSubscribeLiDARPointCloud_Livox(const sensor_msgs::PointCloud2ConstPtr &msg)
+{
     pcl::fromROSMsg(*msg, *livox_cloud_now);
-    if(livox_cloud_now->empty()) {
+    if (livox_cloud_now->empty())
+    {
         printf("Livox Cloud Empty\n");
         return;
     }
@@ -575,20 +623,23 @@ void OnSubscribeLiDARPointCloud_Livox(const sensor_msgs::PointCloud2ConstPtr & m
     double cloud_time = msg->header.stamp.toSec();
 
     std::vector<double> point_times;
-    for(size_t i = 0; i < livox_cloud_now->size(); ++i) {
-        point_times.push_back(static_cast<double>(livox_cloud_now->points[i].timestamp)*1e-9);
+    for (size_t i = 0; i < livox_cloud_now->size(); ++i)
+    {
+        point_times.push_back(static_cast<double>(livox_cloud_now->points[i].timestamp) * 1e-9);
     }
     std::sort(point_times.begin(), point_times.end());
     double min_time = point_times.front();
     double max_time = point_times.back();
 
-    if(max_time - min_time > 0.15) {
+    if (max_time - min_time > 0.15)
+    {
 
         printf("wrong points: %f\n", max_time - min_time);
         return;
     }
 
-    if(!do_deskew) {
+    if (!do_deskew)
+    {
         printf("No Deskew\n");
 
         pubLiDARDeskew.publish(transformed_msg);
@@ -600,7 +651,8 @@ void OnSubscribeLiDARPointCloud_Livox(const sensor_msgs::PointCloud2ConstPtr & m
     double imu_back_time = 0.0;
 
     mtx.lock();
-    if(imuQueue.empty()) {
+    if (imuQueue.empty())
+    {
         printf("IMU Empty\n");
 
         mtx.unlock();
@@ -609,7 +661,8 @@ void OnSubscribeLiDARPointCloud_Livox(const sensor_msgs::PointCloud2ConstPtr & m
 
     imu_front_time = imuQueue.front().header.stamp.toSec();
     imu_back_time = imuQueue.back().header.stamp.toSec();
-    if(imu_front_time > min_time) {
+    if (imu_front_time > min_time)
+    {
         printf("IMU Invalid\n");
 
         // IMU minimum time is larger than the point time: invalid point cloud
@@ -617,12 +670,14 @@ void OnSubscribeLiDARPointCloud_Livox(const sensor_msgs::PointCloud2ConstPtr & m
         return;
     }
     sensor_msgs::Imu imu_front;
-    while(imuQueue.front().header.stamp.toSec() < min_time) {
+    while (imuQueue.front().header.stamp.toSec() < min_time)
+    {
         printf("imuFront Time: %f\n", imuQueue.front().header.stamp.toSec());
 
         imu_front = imuQueue.front();
         imuQueue.pop_front();
-        if(imuQueue.empty()) {
+        if (imuQueue.empty())
+        {
             printf("IMU Empty2\n");
             printf("min Time: %f\n", min_time);
 
@@ -634,7 +689,8 @@ void OnSubscribeLiDARPointCloud_Livox(const sensor_msgs::PointCloud2ConstPtr & m
 
     mtx.unlock();
 
-    while(imu_back_time < max_time) {
+    while (imu_back_time < max_time)
+    {
         // Wait untill imuQueue fills up to cover all point times
         usleep(1000);
         mtx.lock();
@@ -642,18 +698,20 @@ void OnSubscribeLiDARPointCloud_Livox(const sensor_msgs::PointCloud2ConstPtr & m
         mtx.unlock();
     }
 
-
-    if(!EstimateRotation()) {
+    if (!EstimateRotation())
+    {
         pubLiDARDeskew.publish(transformed_msg);
         pubLiDAR.publish(transformed_msg);
         return;
     }
 
-    //Estimate the first rotation
+    // Estimate the first rotation
     int first_imu_index = 0;
-    while(imuTime[first_imu_index] < min_time) {
+    while (imuTime[first_imu_index] < min_time)
+    {
         ++first_imu_index;
-        if(first_imu_index >= poseSize) {
+        if (first_imu_index >= poseSize)
+        {
             break;
         }
     }
@@ -663,17 +721,20 @@ void OnSubscribeLiDARPointCloud_Livox(const sensor_msgs::PointCloud2ConstPtr & m
     double first_rotZ = 0.0;
     Eigen::Matrix3d first_rotMat = Eigen::Matrix3d::Identity();
 
-    if(first_imu_index == 0 || imuTime[first_imu_index] < min_time) {
+    if (first_imu_index == 0 || imuTime[first_imu_index] < min_time)
+    {
         first_rotMat = imuRotMat[first_imu_index];
-    } else {
-        double ratio = (min_time - imuTime[first_imu_index -1])/(imuTime[first_imu_index] - imuTime[first_imu_index - 1]);
-        first_rotMat = rotInterpolation(imuRotMat[first_imu_index-1], imuRotMat[first_imu_index], ratio);
+    }
+    else
+    {
+        double ratio = (min_time - imuTime[first_imu_index - 1]) / (imuTime[first_imu_index] - imuTime[first_imu_index - 1]);
+        first_rotMat = rotInterpolation(imuRotMat[first_imu_index - 1], imuRotMat[first_imu_index], ratio);
     }
 
-
-    #pragma omp parallel for num_threads(4)
-    for(size_t i = 0; i < hesai_cloud_now->size(); ++i) {
-        HesaiPoint & pt = hesai_cloud_now->points[i];
+#pragma omp parallel for num_threads(4)
+    for (size_t i = 0; i < hesai_cloud_now->size(); ++i)
+    {
+        HesaiPoint &pt = hesai_cloud_now->points[i];
         int imu_index = 0;
 
         double point_time = pt.timestamp;
@@ -684,31 +745,33 @@ void OnSubscribeLiDARPointCloud_Livox(const sensor_msgs::PointCloud2ConstPtr & m
 
         Eigen::Matrix3d rotMat;
 
-        while(imuTime[imu_index] < point_time) {
+        while (imuTime[imu_index] < point_time)
+        {
             ++imu_index;
-            if(imu_index >= poseSize) {
+            if (imu_index >= poseSize)
+            {
                 printf("imu index exceeds est_pose count: %d, %d\n", imu_index, poseSize);
                 printf("imu time: %f[s], point time: %f[s]\n", imuTime[imu_index], point_time);
                 break;
             }
         }
 
-        if(imu_index == 0 || imuTime[imu_index] < point_time) {
+        if (imu_index == 0 || imuTime[imu_index] < point_time)
+        {
             rotMat = first_rotMat.transpose() * imuRotMat[imu_index];
-        }  else {
-
-            double ratio = (point_time - imuTime[imu_index -1])/(imuTime[imu_index] - imuTime[imu_index - 1]);
-            rotMat = first_rotMat.transpose() * (rotInterpolation(imuRotMat[imu_index-1], imuRotMat[imu_index], ratio));
         }
+        else
+        {
 
+            double ratio = (point_time - imuTime[imu_index - 1]) / (imuTime[imu_index] - imuTime[imu_index - 1]);
+            rotMat = first_rotMat.transpose() * (rotInterpolation(imuRotMat[imu_index - 1], imuRotMat[imu_index], ratio));
+        }
 
         Eigen::Vector3d pt_vec = rotMat * Eigen::Vector3d(pt.x, pt.y, pt.z);
         pt.x = pt_vec.x();
         pt.y = pt_vec.y();
         pt.z = pt_vec.z();
-
     }
-
 
     sensor_msgs::PointCloud2 deskew_msg;
     pcl::toROSMsg(*hesai_cloud_now, deskew_msg);
@@ -716,12 +779,10 @@ void OnSubscribeLiDARPointCloud_Livox(const sensor_msgs::PointCloud2ConstPtr & m
     deskew_msg.header.frame_id = "lidar";
     pubLiDARDeskew.publish(deskew_msg);
     pubLiDAR.publish(transformed_msg);
-
-
 }
 
-
-int main(int argc, char ** argv) {
+int main(int argc, char **argv)
+{
 
     ros::init(argc, argv, "nv_lidar_deskew_node");
     ros::NodeHandle nh;
@@ -753,14 +814,19 @@ int main(int argc, char ** argv) {
     do_deskew = deskew_flag == 1 ? true : false;
 
     ros::Subscriber subLiDARPointCloud;
-    if(lidar_type == 0) {
+    if (lidar_type == 0)
+    {
         subLiDARPointCloud = nh.subscribe<sensor_msgs::PointCloud2>(lidarTopic, 1, OnSubscribeLiDARPointCloud);
-    } else if (lidar_type == 1) {
+    }
+    else if (lidar_type == 1)
+    {
         subLiDARPointCloud = nh.subscribe<sensor_msgs::PointCloud2>(lidarTopic, 1, OnSubscribeLiDARPointCloud_Hesai);
-    } else if (lidar_type == 2) {
+    }
+    else if (lidar_type == 2)
+    {
         subLiDARPointCloud = nh.subscribe<sensor_msgs::PointCloud2>(lidarTopic, 1, OnSubscribeVelodynePointCloud);
     }
-    
+
     ros::Subscriber subIMU = nh.subscribe<sensor_msgs::Imu>(imuTopic, 20000, OnSubscribeIMU);
     ros::Subscriber subBias = nh.subscribe<std_msgs::Float64MultiArray>("/nv_liom/ang_bias", 2000, OnSubscribeAngBias);
 
@@ -774,6 +840,6 @@ int main(int argc, char ** argv) {
     ROS_INFO("\033[1;34mLiDAR Deskew Node Started\033[0m");
     ros::MultiThreadedSpinner spinner(2);
     spinner.spin();
-    
+
     return 0;
 }

@@ -234,16 +234,29 @@ void NormalExtraction(const pcl::PointCloud<ProjectedPoint>::Ptr &projected_clou
     }
 }
 
+/**
+ * @brief 订阅并处理投影点云数据，将点云转换为带法向量的点云并发布
+ *
+ * @param msg 输入的ROS点云消息
+ */
 void OnSubscribeProjectedPointCloud(const sensor_msgs::PointCloud2ConstPtr &msg)
 {
+    // 将ROS点云消息转换为pcl格式的投影点云
     pcl::PointCloud<ProjectedPoint>::Ptr projected_cloud(new pcl::PointCloud<ProjectedPoint>);
     pcl::fromROSMsg(*msg, *projected_cloud);
+
+    // 创建带法向量的点云，用于存储法向量计算结果
     pcl::PointCloud<PointsWithNormals>::Ptr normal_cloud(new pcl::PointCloud<PointsWithNormals>(hor_pixel_num, ver_pixel_num));
+
+    // 调用法向量提取函数，对投影点云计算法向量
     NormalExtraction(projected_cloud, normal_cloud);
 
+    // 将带法向量的点云转换回ROS消息格式
     sensor_msgs::PointCloud2 normal_cloud_msg;
     pcl::toROSMsg(*normal_cloud, normal_cloud_msg);
     normal_cloud_msg.header = msg->header;
+
+    // 发布带法向量的点云
     pubNormalPointCloud.publish(normal_cloud_msg);
 }
 
